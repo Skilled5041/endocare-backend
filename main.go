@@ -52,11 +52,11 @@ func main() {
 
 	r.POST("/insert_sleep", func(c *gin.Context) {
 		var req struct {
-			Duration      float64 `json:"duration"`
-			Efficiency    int32   `json:"efficiency"`
-			DeepPct       int32   `json:"deep_pct"`
-			Latency       int32   `json:"latency"`
-			NumAwakenings int32   `json:"num_awakenings"`
+			Date        string  `json:"date"`
+			Duration    float64 `json:"duration"`
+			Quality     int32   `json:"quality"`
+			Disruptions string  `json:"disruptions"`
+			Notes       string  `json:"notes"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -64,12 +64,18 @@ func main() {
 			return
 		}
 
+		parsedDate, err := time.Parse(time.RFC3339, req.Date)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format, expected RFC3339"})
+			return
+		}
+
 		params := database.InsertSleepParams{
-			Duration:      pgtype.Float8{Float64: req.Duration, Valid: true},
-			Efficiency:    pgtype.Int4{Int32: req.Efficiency, Valid: true},
-			DeepPct:       pgtype.Int4{Int32: req.DeepPct, Valid: true},
-			Latency:       pgtype.Int4{Int32: req.Latency, Valid: true},
-			NumAwakenings: pgtype.Int4{Int32: req.NumAwakenings, Valid: true},
+			Date:        pgtype.Date{Time: parsedDate, Valid: true},
+			Duration:    pgtype.Float8{Float64: req.Duration, Valid: true},
+			Quality:     pgtype.Int4{Int32: req.Quality, Valid: true},
+			Disruptions: pgtype.Text{String: req.Disruptions, Valid: true},
+			Notes:       pgtype.Text{String: req.Notes, Valid: true},
 		}
 
 		res, err := queries.InsertSleep(ctx, params)
@@ -84,8 +90,9 @@ func main() {
 	r.POST("/insert_diet", func(c *gin.Context) {
 		var req struct {
 			Meal  string   `json:"meal"`
-			Time  string   `json:"time"`
+			Date  string   `json:"date"`
 			Items []string `json:"items"`
+			Notes string   `json:"notes"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -93,7 +100,7 @@ func main() {
 			return
 		}
 
-		parsedTime, err := time.Parse(time.RFC3339, req.Time)
+		parsedTime, err := time.Parse(time.RFC3339, req.Date)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid time format, expected HH:MM:SS"})
 			return
@@ -101,8 +108,9 @@ func main() {
 
 		params := database.InsertDietParams{
 			Meal:  pgtype.Text{String: req.Meal, Valid: true},
-			Time:  pgtype.Timestamp{Time: parsedTime, Valid: true},
+			Date:  pgtype.Date{Time: parsedTime, Valid: true},
 			Items: req.Items,
+			Notes: pgtype.Text{String: dbURL, Valid: true},
 		}
 
 		res, err := queries.InsertDiet(ctx, params)
@@ -116,10 +124,10 @@ func main() {
 
 	r.POST("/insert_menstrual", func(c *gin.Context) {
 		var req struct {
-			CycleDay    int32    `json:"cycle_day"`
-			PainRating  int32    `json:"pain_rating"`
-			StressLevel int32    `json:"stress_level"`
-			Medication  []string `json:"medication"`
+			PeriodEvent string `json:"period_event"`
+			Date        string `json:"date"`
+			FlowLevel   string `json:"flow_level"`
+			Notes       string `json:"notes"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -127,11 +135,17 @@ func main() {
 			return
 		}
 
+		parsedDate, err := time.Parse(time.RFC3339, req.Date)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format, expected RFC3339"})
+			return
+		}
+
 		params := database.InsertMenstrualParams{
-			CycleDay:    pgtype.Int4{Int32: req.CycleDay, Valid: true},
-			PainRating:  pgtype.Int4{Int32: req.PainRating, Valid: true},
-			StressLevel: pgtype.Int4{Int32: req.StressLevel, Valid: true},
-			Medication:  req.Medication,
+			PeriodEvent: pgtype.Text{String: req.PeriodEvent, Valid: true},
+			Date:        pgtype.Date{Time: parsedDate, Valid: true},
+			FlowLevel:   pgtype.Text{String: req.FlowLevel, Valid: true},
+			Notes:       pgtype.Text{String: req.Notes, Valid: true},
 		}
 
 		res, err := queries.InsertMenstrual(ctx, params)
@@ -140,6 +154,39 @@ func main() {
 			return
 		}
 
+		c.JSON(http.StatusOK, res)
+	})
+
+	r.POST("/insert_symptoms", func(c *gin.Context) {
+		var req struct {
+			Date    string `json:"date"`
+			Nausea  int32  `json:"nausea"`
+			Fatigue int32  `json:"fatigue"`
+			Pain    int32  `json:"pain"`
+			Notes   string `json:"notes"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		parsedDate, err := time.Parse(time.RFC3339, req.Date)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format, expected RFC3339"})
+			return
+		}
+		params := database.InsertSymptomsParams{
+			Date:    pgtype.Date{Time: parsedDate, Valid: true},
+			Nausea:  pgtype.Int4{Int32: req.Nausea, Valid: true},
+			Fatigue: pgtype.Int4{Int32: req.Fatigue, Valid: true},
+			Pain:    pgtype.Int4{Int32: req.Pain, Valid: true},
+			Notes:   pgtype.Text{String: req.Notes, Valid: true},
+		}
+
+		res, err := queries.InsertSymptoms(ctx, params)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusOK, res)
 	})
 
@@ -163,6 +210,15 @@ func main() {
 
 	r.GET("/get_all_menstrual", func(c *gin.Context) {
 		res, err := queries.GetAllMenstrual(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, res)
+	})
+
+	r.GET("/get_all_symptoms", func(c *gin.Context) {
+		res, err := queries.GetAllSymptoms(ctx)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

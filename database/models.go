@@ -11,23 +11,33 @@ import (
 type Diet struct {
 	ID    int32
 	Meal  pgtype.Text
+	Date  pgtype.Date
 	Items []string
-	Time  pgtype.Timestamp
+	Notes pgtype.Text
 }
 
 type Menstrual struct {
 	ID          int32
-	CycleDay    pgtype.Int4
-	PainRating  pgtype.Int4
-	StressLevel pgtype.Int4
-	Medication  []string
+	PeriodEvent pgtype.Text
+	Date        pgtype.Date
+	FlowLevel   pgtype.Text
+	Notes       pgtype.Text
 }
 
 type Sleep struct {
-	ID            int32
-	Duration      pgtype.Float8
-	Efficiency    pgtype.Int4
-	DeepPct       pgtype.Int4
-	Latency       pgtype.Int4
-	NumAwakenings pgtype.Int4
+	ID          int32
+	Date        pgtype.Date
+	Duration    pgtype.Float8
+	Quality     pgtype.Int4
+	Disruptions pgtype.Text
+	Notes       pgtype.Text
+}
+
+type Symptom struct {
+	ID      int32
+	Date    pgtype.Date
+	Nausea  pgtype.Int4
+	Fatigue pgtype.Int4
+	Pain    pgtype.Int4
+	Notes   pgtype.Text
 }

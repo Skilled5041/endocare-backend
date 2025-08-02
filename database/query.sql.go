@@ -12,7 +12,7 @@ import (
 )
 
 const getAllDiet = `-- name: GetAllDiet :many
-select id, meal, items, time from diet
+select id, meal, date, items, notes from diet
 `
 
 func (q *Queries) GetAllDiet(ctx context.Context) ([]Diet, error) {
@@ -27,8 +27,9 @@ func (q *Queries) GetAllDiet(ctx context.Context) ([]Diet, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Meal,
+			&i.Date,
 			&i.Items,
-			&i.Time,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -41,7 +42,7 @@ func (q *Queries) GetAllDiet(ctx context.Context) ([]Diet, error) {
 }
 
 const getAllMenstrual = `-- name: GetAllMenstrual :many
-select id, cycle_day, pain_rating, stress_level, medication from menstrual
+select id, period_event, date, flow_level, notes from menstrual
 `
 
 func (q *Queries) GetAllMenstrual(ctx context.Context) ([]Menstrual, error) {
@@ -55,10 +56,10 @@ func (q *Queries) GetAllMenstrual(ctx context.Context) ([]Menstrual, error) {
 		var i Menstrual
 		if err := rows.Scan(
 			&i.ID,
-			&i.CycleDay,
-			&i.PainRating,
-			&i.StressLevel,
-			&i.Medication,
+			&i.PeriodEvent,
+			&i.Date,
+			&i.FlowLevel,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -71,7 +72,7 @@ func (q *Queries) GetAllMenstrual(ctx context.Context) ([]Menstrual, error) {
 }
 
 const getAllSleep = `-- name: GetAllSleep :many
-select id, duration, efficiency, deep_pct, latency, num_awakenings from sleep
+select id, date, duration, quality, disruptions, notes from sleep
 `
 
 func (q *Queries) GetAllSleep(ctx context.Context) ([]Sleep, error) {
@@ -85,11 +86,42 @@ func (q *Queries) GetAllSleep(ctx context.Context) ([]Sleep, error) {
 		var i Sleep
 		if err := rows.Scan(
 			&i.ID,
+			&i.Date,
 			&i.Duration,
-			&i.Efficiency,
-			&i.DeepPct,
-			&i.Latency,
-			&i.NumAwakenings,
+			&i.Quality,
+			&i.Disruptions,
+			&i.Notes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllSymptoms = `-- name: GetAllSymptoms :many
+select id, date, nausea, fatigue, pain, notes from symptoms
+`
+
+func (q *Queries) GetAllSymptoms(ctx context.Context) ([]Symptom, error) {
+	rows, err := q.db.Query(ctx, getAllSymptoms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Symptom
+	for rows.Next() {
+		var i Symptom
+		if err := rows.Scan(
+			&i.ID,
+			&i.Date,
+			&i.Nausea,
+			&i.Fatigue,
+			&i.Pain,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}
@@ -102,90 +134,131 @@ func (q *Queries) GetAllSleep(ctx context.Context) ([]Sleep, error) {
 }
 
 const insertDiet = `-- name: InsertDiet :one
-insert into diet (meal, time, items)
-values ($1, $2, $3)
-returning id, meal, items, time
+insert into diet (meal, date, items, notes)
+values ($1, $2, $3, $4)
+returning id, meal, date, items, notes
 `
 
 type InsertDietParams struct {
 	Meal  pgtype.Text
-	Time  pgtype.Timestamp
+	Date  pgtype.Date
 	Items []string
+	Notes pgtype.Text
 }
 
 func (q *Queries) InsertDiet(ctx context.Context, arg InsertDietParams) (Diet, error) {
-	row := q.db.QueryRow(ctx, insertDiet, arg.Meal, arg.Time, arg.Items)
+	row := q.db.QueryRow(ctx, insertDiet,
+		arg.Meal,
+		arg.Date,
+		arg.Items,
+		arg.Notes,
+	)
 	var i Diet
 	err := row.Scan(
 		&i.ID,
 		&i.Meal,
+		&i.Date,
 		&i.Items,
-		&i.Time,
+		&i.Notes,
 	)
 	return i, err
 }
 
 const insertMenstrual = `-- name: InsertMenstrual :one
-insert into menstrual (cycle_day, pain_rating, stress_level, medication)
+insert into menstrual (period_event, date, flow_level, notes)
 values ($1, $2, $3, $4)
-returning id, cycle_day, pain_rating, stress_level, medication
+returning id, period_event, date, flow_level, notes
 `
 
 type InsertMenstrualParams struct {
-	CycleDay    pgtype.Int4
-	PainRating  pgtype.Int4
-	StressLevel pgtype.Int4
-	Medication  []string
+	PeriodEvent pgtype.Text
+	Date        pgtype.Date
+	FlowLevel   pgtype.Text
+	Notes       pgtype.Text
 }
 
 func (q *Queries) InsertMenstrual(ctx context.Context, arg InsertMenstrualParams) (Menstrual, error) {
 	row := q.db.QueryRow(ctx, insertMenstrual,
-		arg.CycleDay,
-		arg.PainRating,
-		arg.StressLevel,
-		arg.Medication,
+		arg.PeriodEvent,
+		arg.Date,
+		arg.FlowLevel,
+		arg.Notes,
 	)
 	var i Menstrual
 	err := row.Scan(
 		&i.ID,
-		&i.CycleDay,
-		&i.PainRating,
-		&i.StressLevel,
-		&i.Medication,
+		&i.PeriodEvent,
+		&i.Date,
+		&i.FlowLevel,
+		&i.Notes,
 	)
 	return i, err
 }
 
 const insertSleep = `-- name: InsertSleep :one
-insert into sleep (duration, efficiency, deep_pct, latency, num_awakenings)
+insert into sleep (date, duration, quality, disruptions, notes)
 values ($1, $2, $3, $4, $5)
-returning id, duration, efficiency, deep_pct, latency, num_awakenings
+returning id, date, duration, quality, disruptions, notes
 `
 
 type InsertSleepParams struct {
-	Duration      pgtype.Float8
-	Efficiency    pgtype.Int4
-	DeepPct       pgtype.Int4
-	Latency       pgtype.Int4
-	NumAwakenings pgtype.Int4
+	Date        pgtype.Date
+	Duration    pgtype.Float8
+	Quality     pgtype.Int4
+	Disruptions pgtype.Text
+	Notes       pgtype.Text
 }
 
 func (q *Queries) InsertSleep(ctx context.Context, arg InsertSleepParams) (Sleep, error) {
 	row := q.db.QueryRow(ctx, insertSleep,
+		arg.Date,
 		arg.Duration,
-		arg.Efficiency,
-		arg.DeepPct,
-		arg.Latency,
-		arg.NumAwakenings,
+		arg.Quality,
+		arg.Disruptions,
+		arg.Notes,
 	)
 	var i Sleep
 	err := row.Scan(
 		&i.ID,
+		&i.Date,
 		&i.Duration,
-		&i.Efficiency,
-		&i.DeepPct,
-		&i.Latency,
-		&i.NumAwakenings,
+		&i.Quality,
+		&i.Disruptions,
+		&i.Notes,
+	)
+	return i, err
+}
+
+const insertSymptoms = `-- name: InsertSymptoms :one
+insert into symptoms (date, nausea, fatigue, pain, notes)
+values ($1, $2, $3, $4, $5)
+returning id, date, nausea, fatigue, pain, notes
+`
+
+type InsertSymptomsParams struct {
+	Date    pgtype.Date
+	Nausea  pgtype.Int4
+	Fatigue pgtype.Int4
+	Pain    pgtype.Int4
+	Notes   pgtype.Text
+}
+
+func (q *Queries) InsertSymptoms(ctx context.Context, arg InsertSymptomsParams) (Symptom, error) {
+	row := q.db.QueryRow(ctx, insertSymptoms,
+		arg.Date,
+		arg.Nausea,
+		arg.Fatigue,
+		arg.Pain,
+		arg.Notes,
+	)
+	var i Symptom
+	err := row.Scan(
+		&i.ID,
+		&i.Date,
+		&i.Nausea,
+		&i.Fatigue,
+		&i.Pain,
+		&i.Notes,
 	)
 	return i, err
 }
