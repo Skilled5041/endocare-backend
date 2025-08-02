@@ -12,3 +12,12 @@ returning *;
 insert into menstrual (cycle_day, pain_rating, stress_level, medication)
 values ($1, $2, $3, $4)
 returning *;
+
+-- name: GetAllSleep :many
+select * from sleep;
+
+-- name: GetAllDiet :many
+select * from diet;
+
+-- name: GetAllMenstrual :many
+select * from menstrual;

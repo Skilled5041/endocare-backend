@@ -11,6 +11,96 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getAllDiet = `-- name: GetAllDiet :many
+select id, meal, items, time from diet
+`
+
+func (q *Queries) GetAllDiet(ctx context.Context) ([]Diet, error) {
+	rows, err := q.db.Query(ctx, getAllDiet)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Diet
+	for rows.Next() {
+		var i Diet
+		if err := rows.Scan(
+			&i.ID,
+			&i.Meal,
+			&i.Items,
+			&i.Time,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllMenstrual = `-- name: GetAllMenstrual :many
+select id, cycle_day, pain_rating, stress_level, medication from menstrual
+`
+
+func (q *Queries) GetAllMenstrual(ctx context.Context) ([]Menstrual, error) {
+	rows, err := q.db.Query(ctx, getAllMenstrual)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Menstrual
+	for rows.Next() {
+		var i Menstrual
+		if err := rows.Scan(
+			&i.ID,
+			&i.CycleDay,
+			&i.PainRating,
+			&i.StressLevel,
+			&i.Medication,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllSleep = `-- name: GetAllSleep :many
+select id, duration, efficiency, deep_pct, latency, num_awakenings from sleep
+`
+
+func (q *Queries) GetAllSleep(ctx context.Context) ([]Sleep, error) {
+	rows, err := q.db.Query(ctx, getAllSleep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Sleep
+	for rows.Next() {
+		var i Sleep
+		if err := rows.Scan(
+			&i.ID,
+			&i.Duration,
+			&i.Efficiency,
+			&i.DeepPct,
+			&i.Latency,
+			&i.NumAwakenings,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertDiet = `-- name: InsertDiet :one
 insert into diet (meal, time, items)
 values ($1, $2, $3)

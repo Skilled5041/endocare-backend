@@ -143,6 +143,33 @@ func main() {
 		c.JSON(http.StatusOK, res)
 	})
 
+	r.GET("/get_all_sleep", func(c *gin.Context) {
+		res, err := queries.GetAllSleep(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, res)
+	})
+
+	r.GET("/get_all_diet", func(c *gin.Context) {
+		res, err := queries.GetAllDiet(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, res)
+	})
+
+	r.GET("/get_all_menstrual", func(c *gin.Context) {
+		res, err := queries.GetAllMenstrual(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, res)
+	})
+
 	fmt.Printf("Server is running on http://localhost:%s\n", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
