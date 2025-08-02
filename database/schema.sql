@@ -1,4 +1,4 @@
-create table sleep (
+create table if not exists sleep (
     id serial primary key,
     date date not null,
     duration double precision, -- hours
@@ -7,7 +7,14 @@ create table sleep (
     notes text
 );
 
-create table diet (
+create table if not exists predictions (
+  id serial primary key,
+  date date not null,
+  cycle_day int not null,
+  probability numeric not null
+);
+
+create table if not exists diet (
     id serial primary key,
     meal text, -- breakfast, lunch, dinner, snack etc.
     date date not null,
@@ -15,7 +22,7 @@ create table diet (
     notes text
 );
 
-create table menstrual (
+create table if not exists menstrual (
     id serial primary key,
     period_event text, -- start, end, ovulation, etc.
     date date not null,
@@ -24,7 +31,7 @@ create table menstrual (
 );
 
 
-create table symptoms (
+create table if not exists symptoms (
     id serial primary key,
     date date not null,
     nausea integer, -- 1 to 10 scale

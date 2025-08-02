@@ -24,6 +24,13 @@ type Menstrual struct {
 	Notes       pgtype.Text
 }
 
+type Prediction struct {
+	ID          int32
+	Date        pgtype.Date
+	CycleDay    int32
+	Probability pgtype.Numeric
+}
+
 type Sleep struct {
 	ID          int32
 	Date        pgtype.Date
