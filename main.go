@@ -898,6 +898,34 @@ func main() {
 		c.String(http.StatusOK, recommendations)
 	})
 
+	r.GET("/seven_day_average", func(c *gin.Context) {
+		queries := database.New(pool)
+		symptomsData, err := queries.GetAllSymptoms(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if len(symptomsData) < 7 {
+			c.JSON(http.StatusOK, gin.H{"message": "Not enough data for 7-day average"})
+			return
+		}
+		var totalNausea, totalFatigue, totalPain int32
+		for i := len(symptomsData) - 7; i < len(symptomsData); i++ {
+			sym := symptomsData[i]
+			totalNausea += sym.Nausea.Int32
+			totalFatigue += sym.Fatigue.Int32
+			totalPain += sym.Pain.Int32
+		}
+		averageNausea := float64(totalNausea) / 7.0
+		averageFatigue := float64(totalFatigue) / 7.0
+		averagePain := float64(totalPain) / 7.0
+		c.JSON(http.StatusOK, gin.H{
+			"average_nausea":  averageNausea,
+			"average_fatigue": averageFatigue,
+			"average_pain":    averagePain,
+		})
+	})
+
 	fmt.Printf("Server is running on http://localhost:%s\n", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
