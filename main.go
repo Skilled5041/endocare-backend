@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"google.golang.org/genai"
 
 	"terrahack2025-backend/database"
 )
@@ -31,6 +33,20 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+	}
+
+	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
+	if geminiAPIKey == "" {
+		log.Fatal("Missing required environment variable: GEMINI_API_KEY")
+	}
+
+	ctx2 := context.Background()
+	client, err := genai.NewClient(ctx2, &genai.ClientConfig{
+		APIKey: geminiAPIKey,
+	})
+
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	ctx := context.Background()
@@ -631,7 +647,7 @@ func main() {
 			if diets, ok := recentDiet[date]; ok {
 				for _, d := range diets {
 					for _, item := range d.Items {
-						recentFlareupPredictions = append(recentFlareupPredictions, fmt.Sprintf("Food item %s consumed on %s", item, date))
+						recentFlareupPredictions = append(recentFlareupPredictions, fmt.Sprintf("%s consumed on %s", strings.Title(item), date))
 					}
 				}
 			}
@@ -678,6 +694,208 @@ func main() {
 			"flareup_probability": probability,
 			"flareup_predictions": recentFlareupPredictions,
 		})
+	})
+
+	r.GET("recommendations", func(c *gin.Context) {
+		queries := database.New(pool)
+
+		sleepData, err := queries.GetAllSleep(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		dietData, err := queries.GetAllDiet(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		menstrualData, err := queries.GetAllMenstrual(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		symptomsData, err := queries.GetAllSymptoms(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		type triggerCounts struct {
+			LowSleepHours  int
+			MenstrualEvent map[string]int
+			FlowLevel      map[string]int
+			FoodItems      map[string]int
+		}
+
+		type TriggerDetail struct {
+			Date            string  `json:"date"`
+			TriggerSeverity float64 `json:"trigger_severity"`
+		}
+
+		triggers := triggerCounts{
+			MenstrualEvent: make(map[string]int),
+			FlowLevel:      make(map[string]int),
+			FoodItems:      make(map[string]int),
+		}
+
+		// Track details per trigger for output
+		var lowSleepDetails []TriggerDetail
+		foodItemDetails := map[string][]TriggerDetail{}
+		menstrualEventDetails := map[string][]TriggerDetail{}
+		flowLevelDetails := map[string][]TriggerDetail{}
+
+		// Map data by date
+		sleepMap := map[string]database.Sleep{}
+		for _, s := range sleepData {
+			sleepMap[s.Date.Time.Format("2006-01-02")] = s
+		}
+
+		dietMap := map[string][]database.Diet{}
+		for _, d := range dietData {
+			date := d.Date.Time.Format("2006-01-02")
+			dietMap[date] = append(dietMap[date], d)
+		}
+
+		menstrualMap := map[string]database.Menstrual{}
+		for _, m := range menstrualData {
+			menstrualMap[m.Date.Time.Format("2006-01-02")] = m
+		}
+
+		// Calculate mean and std dev of symptom severity
+		var scores []float64
+		for _, sym := range symptomsData {
+			avg := float64(sym.Nausea.Int32+sym.Fatigue.Int32+sym.Pain.Int32) / 3.0
+			scores = append(scores, avg)
+		}
+		if len(scores) == 0 {
+			c.JSON(http.StatusOK, gin.H{"message": "No symptom data found."})
+			return
+		}
+
+		var sum float64
+		for _, s := range scores {
+			sum += s
+		}
+		mean := sum / float64(len(scores))
+
+		var squaredDiffSum float64
+		for _, s := range scores {
+			diff := s - mean
+			squaredDiffSum += diff * diff
+		}
+		stdDev := 0.0
+		if len(scores) > 1 {
+			stdDev = squaredDiffSum / float64(len(scores)-1)
+			stdDev = math.Sqrt(stdDev)
+		}
+
+		// Calculate spike threshold based on symptom score differences
+		type ScoredDay struct {
+			Date  time.Time
+			Score float64
+		}
+		var scoredDays []ScoredDay
+		for _, sym := range symptomsData {
+			score := float64(sym.Nausea.Int32+sym.Fatigue.Int32+sym.Pain.Int32) / 3.0
+			scoredDays = append(scoredDays, ScoredDay{Date: sym.Date.Time, Score: score})
+		}
+		sort.Slice(scoredDays, func(i, j int) bool {
+			return scoredDays[i].Date.Before(scoredDays[j].Date)
+		})
+
+		var diffs []float64
+		for i := 1; i < len(scoredDays); i++ {
+			diff := scoredDays[i].Score - scoredDays[i-1].Score
+			diffs = append(diffs, diff)
+		}
+		var sumDiff float64
+		for _, d := range diffs {
+			sumDiff += d
+		}
+		meanDiff := sumDiff / float64(len(diffs))
+
+		var sqSumDiff float64
+		for _, d := range diffs {
+			sqSumDiff += (d - meanDiff) * (d - meanDiff)
+		}
+		stdDiff := math.Sqrt(sqSumDiff / float64(len(diffs)))
+
+		threshold := meanDiff + stdDiff
+
+		// Find spike days based on diff threshold, keep symptom severity for spike day
+		spikeDays := make(map[string]float64) // date => symptom severity
+		for i := 1; i < len(scoredDays); i++ {
+			diff := scoredDays[i].Score - scoredDays[i-1].Score
+			if diff > threshold {
+				dateStr := scoredDays[i].Date.Format("2006-01-02")
+				spikeDays[dateStr] = scoredDays[i].Score
+			}
+		}
+
+		// Check triggers on the day before spike days
+		for spikeDateStr, severity := range spikeDays {
+			spikeDate, _ := time.Parse("2006-01-02", spikeDateStr)
+			dayBefore := spikeDate.AddDate(0, 0, -1).Format("2006-01-02")
+
+			if sleep, ok := sleepMap[dayBefore]; ok {
+				if sleep.Duration.Float64 < 6 {
+					triggers.LowSleepHours++
+					lowSleepDetails = append(lowSleepDetails, TriggerDetail{Date: dayBefore, TriggerSeverity: severity})
+				}
+			}
+
+			if diets, ok := dietMap[dayBefore]; ok {
+				for _, d := range diets {
+					for _, item := range d.Items {
+						triggers.FoodItems[item]++
+						foodItemDetails[item] = append(foodItemDetails[item], TriggerDetail{Date: dayBefore, TriggerSeverity: severity})
+					}
+				}
+			}
+
+			if menstrual, ok := menstrualMap[dayBefore]; ok {
+				triggers.MenstrualEvent[menstrual.PeriodEvent.String]++
+				menstrualEventDetails[menstrual.PeriodEvent.String] = append(menstrualEventDetails[menstrual.PeriodEvent.String], TriggerDetail{Date: dayBefore, TriggerSeverity: severity})
+
+				triggers.FlowLevel[menstrual.FlowLevel.String]++
+				flowLevelDetails[menstrual.FlowLevel.String] = append(flowLevelDetails[menstrual.FlowLevel.String], TriggerDetail{Date: dayBefore, TriggerSeverity: severity})
+			}
+		}
+
+		temp := float32(1)
+		// Example output something like ["avoid inflammatory foods", "increase hydration", "improve sleep hygiene"], only 3
+		result, err := client.Models.GenerateContent(ctx2, "gemini-2.5-flash-lite", genai.Text(`Be short and concise, and specific. Return an array of 3 recommendations to reduce flare-ups based on the following data:
+			Sleep Data: `+fmt.Sprintf("%v", sleepData)+
+			`Diet Data: `+fmt.Sprintf("%v", dietData)+
+			`Menstrual Data: `+fmt.Sprintf("%v", menstrualData)+
+			`Symptoms Data: `+fmt.Sprintf("%v", symptomsData)+
+			`Triggers: `+fmt.Sprintf("%v", triggers)), &genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Role: "Output in the format of a JSON array with 3 items. Example: [\"recommendation1\", \"recommendation2\", \"recommendation3\"]. Output only the json array nothing more. Be very short and concise.",
+			},
+			Temperature:      &temp,
+			MaxOutputTokens:  200,
+			ResponseMIMEType: "application/json",
+			ResponseSchema: &genai.Schema{
+				Type: genai.TypeArray,
+				Items: &genai.Schema{
+					Type: genai.TypeString,
+				},
+			},
+		})
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		if len(result.Candidates) == 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "No recommendations generated"})
+			return
+		}
+
+		recommendations := result.Text()
+		c.String(http.StatusOK, recommendations)
 	})
 
 	fmt.Printf("Server is running on http://localhost:%s\n", port)
